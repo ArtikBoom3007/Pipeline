@@ -1,12 +1,20 @@
 package com.lightbuzz.speechrecognitionandroid;
 
+import android.content.Context;
 import android.content.Intent;
 import android.speech.RecognitionListener;
 import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.view.View;
+import android.widget.Button;
 import android.widget.TextView;
+import android.widget.Toast;
+
+import com.chaquo.python.Python;
+import com.chaquo.python.PyObject;
+import com.chaquo.python.android.AndroidPlatform;
 
 import java.util.ArrayList;
 
@@ -21,6 +29,18 @@ public class MainActivity extends AppCompatActivity implements RecognitionListen
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+        if (! Python.isStarted()) {
+            Python.start(new AndroidPlatform(this));
+        }
+        Button button_to_py = findViewById(R.id.button_py);
+
+        button_to_py.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                onClickBut(v);
+            }
+        });
 
         textViewResults = (TextView)findViewById(R.id.textViewResults);
 
@@ -125,5 +145,14 @@ public class MainActivity extends AppCompatActivity implements RecognitionListen
     @Override
     public void onEvent(int eventType, Bundle params) {
 
+    }
+
+    public void onClickBut(View view) {
+        Python py = Python.getInstance();
+        PyObject pyObject = py.getModule("myscript");
+        String result = pyObject.callAttr("test").toString();
+        TextView myAwesomeTextView = (TextView)findViewById(R.id.textView);
+        myAwesomeTextView.setText(result);
+//        Toast.makeText(this, "Button clicked!", Toast.LENGTH_SHORT).show();
     }
 }

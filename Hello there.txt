@@ -1,3 +1,2 @@
 gradle: 8.3.2
 android sdk: 34.0.0
-python: 3.11.x
