@@ -3,6 +3,8 @@
     package="com.lightbuzz.speechrecognitionandroid">
 
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <uses-permission android:name="android.permission.WRITE_MEDIA_AUDIO" />
 
     <application
         android:allowBackup="true"
