@@ -71,8 +71,8 @@ public class MainActivity extends AppCompatActivity {
                     startRecording();
                     startRecordingButton.setText("Stop recording");
                 } else {
-                    stopRecording();
                     isRecording = false;
+                    stopRecording();
                     startRecordingButton.setText("Start recording");
                 }
             }
