@@ -76,6 +76,15 @@ public class MainActivity extends AppCompatActivity {
 
     private boolean deleteFlag = false;
 
+<<<<<<< HEAD
+=======
+    static {
+        System.loadLibrary("speechrecognitionandroid");
+    }
+
+    public native byte[] processAudio(byte[] audioData);
+
+>>>>>>> 3295786 (Add connection between jbyteArray and c++)
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -257,10 +266,17 @@ public class MainActivity extends AppCompatActivity {
                     while (isRecording) {
                         byte[] buffer = new byte[bufferSize];
                         int bytesRead = audioRecord.read(buffer, 0, buffer.length);
+<<<<<<< HEAD
                         boolean isSil = silenceDetector.isSilence(bytesToFloats(buffer));
 
                         if (bytesRead > 0 && !isSil) {
                             audioData.write(buffer, 0, bytesRead);
+=======
+                        if (bytesRead > 0) {
+                            // Call the C++ function and pass the audio data
+                            buffer = processAudio(buffer);
+                            audioData.write(buffer, 0, buffer.length);
+>>>>>>> 3295786 (Add connection between jbyteArray and c++)
                         }
                         if (audioData.size() == AUDIO_LENGTH) {
                             writeInWav();
