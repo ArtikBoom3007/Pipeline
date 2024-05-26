@@ -58,5 +58,35 @@
             android:layout_marginBottom="97dp"
             android:onClick="playRecording"
             android:text="play" />
+
+        <TextView
+            android:id="@+id/textHello"
+            android:layout_width="114dp"
+            android:layout_height="45dp"
+            android:layout_alignParentStart="true"
+            android:layout_alignParentTop="true"
+            android:layout_marginStart="127dp"
+            android:layout_marginTop="51dp"
+            android:text="aka text" />
+
+        <Button
+            android:id="@+id/button_c"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentStart="true"
+            android:layout_alignParentTop="true"
+            android:layout_marginStart="38dp"
+            android:layout_marginTop="149dp"
+            android:text="Button C++" />
+
+        <Button
+            android:id="@+id/button_py"
+            android:layout_width="121dp"
+            android:layout_height="wrap_content"
+            android:layout_alignParentTop="true"
+            android:layout_alignParentEnd="true"
+            android:layout_marginTop="152dp"
+            android:layout_marginEnd="47dp"
+            android:text="Button Python" />
     </RelativeLayout>
 </RelativeLayout>

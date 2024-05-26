@@ -8,8 +8,6 @@ import android.media.AudioManager;
 import android.media.AudioRecord;
 import android.media.AudioTrack;
 import android.media.MediaRecorder;
-import android.speech.RecognitionListener;
-import android.speech.SpeechRecognizer;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
@@ -26,17 +24,19 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 
+import com.chaquo.python.Python;
+import com.chaquo.python.PyObject;
+import com.chaquo.python.android.AndroidPlatform;
+
 public class MainActivity extends AppCompatActivity {
 
 
     private TextView textViewResults;
     File sdDir = null;
     private ByteArrayOutputStream audioData;
-    private AudioTrack audioTrack;
     private AudioRecord audioRecord;
     private Thread recordingThread;
     private boolean isRecording = false;
-    private boolean permissionToRecordAccepted = false;
     private static final int REQUEST_RECORD_AUDIO_PERMISSION = 200;
     private static final int SAMPLE_RATE = 44100;
     //{8000, 11025, 16000, 22050, 44100}
@@ -44,6 +44,12 @@ public class MainActivity extends AppCompatActivity {
     private static final int CHANNEL_OUT = AudioFormat.CHANNEL_OUT_MONO;
     private static final int BIT_PER_SAMPLE = AudioFormat.ENCODING_PCM_16BIT;
     private int bufferSize;
+
+    static {
+       System.loadLibrary("speechrecognitionandroid");
+    }
+
+    private native String stringFromJNI();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -53,6 +59,32 @@ public class MainActivity extends AppCompatActivity {
         textViewResults = (TextView)findViewById(R.id.textViewResults);
         Button startRecordingButton = findViewById(R.id.startRecordingButton);
         Button playRecordingButton = findViewById(R.id.playRecordingButton);
+
+        Button hello_c = findViewById(R.id.button_c);
+        Button hello_py = findViewById(R.id.button_py);
+        TextView textHello = (TextView)findViewById(R.id.textHello);
+
+        hello_c.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                textHello.setText(stringFromJNI());
+            }
+        });
+
+        if (! Python.isStarted()) {
+            Python.start(new AndroidPlatform(this));
+        }
+
+        hello_py.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                Python py = Python.getInstance();
+                PyObject pyObject = py.getModule("myscript");
+                String result = pyObject.callAttr("test").toString();
+                TextView myAwesomeTextView = (TextView)findViewById(R.id.textHello);
+                myAwesomeTextView.setText(result);
+            }
+        });
 
         // Проверка и запрос разрешения на запись аудио
         ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECORD_AUDIO},
@@ -131,7 +163,7 @@ public class MainActivity extends AppCompatActivity {
             textViewResults.setText("Playing...");
             byte[] audioBytes = audioData.toByteArray();
             int minBufferSize = AudioTrack.getMinBufferSize(SAMPLE_RATE, CHANNEL_OUT, BIT_PER_SAMPLE);
-            audioTrack = new AudioTrack(AudioManager.STREAM_MUSIC, SAMPLE_RATE, CHANNEL_OUT, BIT_PER_SAMPLE, minBufferSize, AudioTrack.MODE_STREAM);
+            AudioTrack audioTrack = new AudioTrack(AudioManager.STREAM_MUSIC, SAMPLE_RATE, CHANNEL_OUT, BIT_PER_SAMPLE, minBufferSize, AudioTrack.MODE_STREAM);
             audioTrack.play();
             audioTrack.write(audioBytes, 0, audioBytes.length);
             textViewResults.setText("Audio ended...");
@@ -157,7 +189,7 @@ public class MainActivity extends AppCompatActivity {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
 
         if (requestCode == REQUEST_RECORD_AUDIO_PERMISSION) {
-            permissionToRecordAccepted = grantResults[0] == PackageManager.PERMISSION_GRANTED;
+            boolean permissionToRecordAccepted = grantResults[0] == PackageManager.PERMISSION_GRANTED;
             if (!permissionToRecordAccepted) {
                 Toast.makeText(this, "Permission Denied", Toast.LENGTH_SHORT).show();
             }
