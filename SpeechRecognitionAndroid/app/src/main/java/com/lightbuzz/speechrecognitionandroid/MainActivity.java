@@ -1,21 +1,20 @@
 package com.lightbuzz.speechrecognitionandroid;
 
 import android.Manifest;
-import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.media.AudioFormat;
 import android.media.AudioManager;
 import android.media.AudioRecord;
 import android.media.AudioTrack;
 import android.media.MediaRecorder;
-import android.speech.RecognitionListener;
-import android.speech.SpeechRecognizer;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.View;
 import android.widget.Button;
+import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -24,7 +23,7 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.util.ArrayList;
+import java.util.Objects;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -32,18 +31,25 @@ public class MainActivity extends AppCompatActivity {
     private TextView textViewResults;
     File sdDir = null;
     private ByteArrayOutputStream audioData;
-    private AudioTrack audioTrack;
     private AudioRecord audioRecord;
     private Thread recordingThread;
     private boolean isRecording = false;
-    private boolean permissionToRecordAccepted = false;
     private static final int REQUEST_RECORD_AUDIO_PERMISSION = 200;
     private static final int SAMPLE_RATE = 44100;
     //{8000, 11025, 16000, 22050, 44100}
     private static final int CHANNEL_IN = AudioFormat.CHANNEL_IN_MONO;
     private static final int CHANNEL_OUT = AudioFormat.CHANNEL_OUT_MONO;
     private static final int BIT_PER_SAMPLE = AudioFormat.ENCODING_PCM_16BIT;
+    private static final int AUDIO_LENGTH = 2 * SAMPLE_RATE * BIT_PER_SAMPLE;
     private int bufferSize;
+    private int nameIterator;
+    private File directory;
+
+    private boolean deleteFlag = false;
+
+//    static {
+//        System.loadLibrary("speechrecognitionandroid");
+//    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -51,8 +57,28 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
 
         textViewResults = (TextView)findViewById(R.id.textViewResults);
+        Switch enable = (Switch)findViewById(R.id.switch_delete);
+        enable.setChecked(true);
+
+        enable.setOnClickListener(new View.OnClickListener()
+        {
+            @Override
+            public void onClick(View view) {
+                if (enable.isChecked()) //checking if  switch is checked
+                {
+                    enable.setChecked(true);
+                    deleteFlag = false;
+                } else {
+                    enable.setChecked(false);
+                    deleteFlag = true;
+                }
+            }
+        });
+
         Button startRecordingButton = findViewById(R.id.startRecordingButton);
         Button playRecordingButton = findViewById(R.id.playRecordingButton);
+
+        nameIterator = 0;
 
         // Проверка и запрос разрешения на запись аудио
         ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECORD_AUDIO},
@@ -79,6 +105,14 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
+    public void onDestroy() {
+
+        super.onDestroy();
+        if (deleteFlag) {
+            deleteRecursive(directory);
+        }
+    }
+
     // Метод для начала записи голоса
     public void startRecording() {
         // Проверка разрешения на запись аудио
@@ -102,10 +136,9 @@ public class MainActivity extends AppCompatActivity {
                         if (bytesRead > 0) {
                             audioData.write(buffer, 0, bytesRead);
                         }
-                        try {
-                            Thread.sleep(30);
-                        } catch (InterruptedException e) {
-                            break;
+                        if (audioData.size() == AUDIO_LENGTH) {
+                            writeInWav();
+                            audioData.reset();
                         }
                     }
                 }
@@ -131,7 +164,7 @@ public class MainActivity extends AppCompatActivity {
             textViewResults.setText("Playing...");
             byte[] audioBytes = audioData.toByteArray();
             int minBufferSize = AudioTrack.getMinBufferSize(SAMPLE_RATE, CHANNEL_OUT, BIT_PER_SAMPLE);
-            audioTrack = new AudioTrack(AudioManager.STREAM_MUSIC, SAMPLE_RATE, CHANNEL_OUT, BIT_PER_SAMPLE, minBufferSize, AudioTrack.MODE_STREAM);
+            AudioTrack audioTrack = new AudioTrack(AudioManager.STREAM_MUSIC, SAMPLE_RATE, CHANNEL_OUT, BIT_PER_SAMPLE, minBufferSize, AudioTrack.MODE_STREAM);
             audioTrack.play();
             audioTrack.write(audioBytes, 0, audioBytes.length);
             textViewResults.setText("Audio ended...");
@@ -139,7 +172,24 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public void writeInWav() {
-        File temp_audio = new File(sdDir,"/Documents/audio" + ".wav");
+        String path = sdDir + "/Documents/TempSRA/";
+        directory = new File(path);
+
+        if (!directory.exists()) {
+            boolean isDirectoryCreated = directory.mkdirs();
+            if (isDirectoryCreated) {
+                Log.d("DirectoryCreated", "Directory created successfully");
+            } else {
+                Log.e("DirectoryCreationError", "Failed to create directory");
+            }
+        } else {
+            Log.d("DirectoryExists", "Directory already exists");
+        }
+
+        String name = "audio" + nameIterator;
+        nameIterator++;
+
+        File temp_audio = new File(directory,name + ".wav");
         FileOutputStream os = null;
         try {
             os = new FileOutputStream(temp_audio);
@@ -157,14 +207,23 @@ public class MainActivity extends AppCompatActivity {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
 
         if (requestCode == REQUEST_RECORD_AUDIO_PERMISSION) {
-            permissionToRecordAccepted = grantResults[0] == PackageManager.PERMISSION_GRANTED;
+            boolean permissionToRecordAccepted = grantResults[0] == PackageManager.PERMISSION_GRANTED;
             if (!permissionToRecordAccepted) {
                 Toast.makeText(this, "Permission Denied", Toast.LENGTH_SHORT).show();
             }
         }
     }
 
+    public void deleteRecursive(File fileOrDirectory) {
 
+        if (fileOrDirectory.isDirectory()) {
+            for (File child : Objects.requireNonNull(fileOrDirectory.listFiles())) {
+                deleteRecursive(child);
+            }
+        }
+
+        fileOrDirectory.delete();
+    }
 
     private void writeWavHeader(FileOutputStream outputStream, int channels, int totalAudioLen) throws IOException {
         byte[] header = new byte[44];
