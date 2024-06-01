@@ -10,8 +10,8 @@ android {
     buildToolsVersion "34.0.0"
     defaultConfig {
         python {
-            version = "3.11"
-            buildPython "D:/Python/Python311/python.exe"
+            version = "3.8"
+            buildPython "D:/Python/Python38/python.exe"
         }
         ndk {
             abiFilters "x86_64", "x86", "armeabi-v7a"
@@ -38,8 +38,8 @@ android {
 
 chaquopy {
     defaultConfig {
-        version = "3.11"
-        buildPython("D:/Python/Python311/python.exe")
+        version = "3.8"
+        buildPython("D:/Python/Python38/python.exe")
         pip {
             install('-r', "requirements.txt")
         }

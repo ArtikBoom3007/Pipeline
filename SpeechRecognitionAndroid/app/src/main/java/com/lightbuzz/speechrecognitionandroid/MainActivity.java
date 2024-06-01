@@ -1,7 +1,9 @@
 package com.lightbuzz.speechrecognitionandroid;
 
 import android.Manifest;
+import android.content.Context;
 import android.content.pm.PackageManager;
+import android.content.res.AssetManager;
 import android.media.AudioFormat;
 import android.media.AudioManager;
 import android.media.AudioRecord;
@@ -20,10 +22,14 @@ import android.widget.Toast;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.Objects;
+
+import com.chaquo.python.Python;
+import com.chaquo.python.PyObject;
+import com.chaquo.python.android.AndroidPlatform;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -40,16 +46,15 @@ public class MainActivity extends AppCompatActivity {
     private static final int CHANNEL_IN = AudioFormat.CHANNEL_IN_MONO;
     private static final int CHANNEL_OUT = AudioFormat.CHANNEL_OUT_MONO;
     private static final int BIT_PER_SAMPLE = AudioFormat.ENCODING_PCM_16BIT;
-    private static final int AUDIO_LENGTH = 2 * SAMPLE_RATE * BIT_PER_SAMPLE;
+    private static final int AUDIO_LENGTH = 5 * SAMPLE_RATE * BIT_PER_SAMPLE;
     private int bufferSize;
     private int nameIterator;
     private File directory;
+    Toast toast;
+    Python py;
+    PyObject module;
 
     private boolean deleteFlag = false;
-
-//    static {
-//        System.loadLibrary("speechrecognitionandroid");
-//    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -60,6 +65,23 @@ public class MainActivity extends AppCompatActivity {
         Switch enable = (Switch)findViewById(R.id.switch_delete);
         enable.setChecked(true);
 
+        nameIterator = 0;
+
+        // Проверка и запрос разрешения на запись аудио
+        ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECORD_AUDIO},
+                REQUEST_RECORD_AUDIO_PERMISSION);
+
+        String sdState = android.os.Environment.getExternalStorageState();
+        if (sdState.equals(android.os.Environment.MEDIA_MOUNTED)) {
+            sdDir = android.os.Environment.getExternalStorageDirectory();
+        }
+
+        String path = sdDir + "/Documents/TempSRA/";
+        directory = new File(path);
+
+        initPy();
+
+        audioData = new ByteArrayOutputStream();
         enable.setOnClickListener(new View.OnClickListener()
         {
             @Override
@@ -74,35 +96,6 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
         });
-
-        Button startRecordingButton = findViewById(R.id.startRecordingButton);
-        Button playRecordingButton = findViewById(R.id.playRecordingButton);
-
-        nameIterator = 0;
-
-        // Проверка и запрос разрешения на запись аудио
-        ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECORD_AUDIO},
-                REQUEST_RECORD_AUDIO_PERMISSION);
-
-        String sdState = android.os.Environment.getExternalStorageState();
-        if (sdState.equals(android.os.Environment.MEDIA_MOUNTED)) {
-            sdDir = android.os.Environment.getExternalStorageDirectory();
-        }
-
-        startRecordingButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (!isRecording) {
-                    isRecording = true;
-                    startRecording();
-                    startRecordingButton.setText("Stop recording");
-                } else {
-                    isRecording = false;
-                    stopRecording();
-                    startRecordingButton.setText("Start recording");
-                }
-            }
-        });
     }
 
     public void onDestroy() {
@@ -113,6 +106,73 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    public void startRecordingOnClick(View view) {
+        Button startRecordingButton = findViewById(R.id.startRecordingButton);
+        if (!isRecording) {
+            isRecording = true;
+            startRecording();
+            startRecordingButton.setText("Stop recording");
+        } else {
+            isRecording = false;
+            stopRecording();
+            startRecordingButton.setText("Start recording");
+        }
+    }
+
+    public void initPy() {
+
+        if (! Python.isStarted()) {
+            Python.start(new AndroidPlatform(this));
+        }
+
+        py = Python.getInstance();
+
+        module = py.getModule("classifier");
+
+        String modelPath = copyAssetToCache(this, "svm_classifier_model.pkl");
+        module.callAttr("load_model", modelPath);
+    }
+
+    public void makeDecision() {
+        File[] audiofiles = directory.listFiles();
+        float sum = 0;
+
+        for (int i = 0; i < audiofiles.length; i++) {
+            PyObject result = module.callAttr("classify_audio", audiofiles[i].getAbsolutePath());
+            sum += result.toJava(float.class);
+        }
+
+        String diagnosis;
+        if (sum / audiofiles.length > 0.5) {
+            diagnosis = "Parkinson";
+        }
+        else {
+            diagnosis = "normal";
+        }
+
+        int duration = Toast.LENGTH_LONG;
+
+        toast = Toast.makeText(this /* MyActivity */, "Your predict " + diagnosis, duration);
+        toast.show();
+
+    }
+
+    public static String copyAssetToCache(Context context, String assetName) {
+        AssetManager assetManager = context.getAssets();
+        File file = new File(context.getCacheDir(), assetName);
+        try (InputStream is = assetManager.open(assetName);
+             FileOutputStream fos = new FileOutputStream(file)) {
+            byte[] buffer = new byte[1024];
+            int length;
+            while ((length = is.read(buffer)) > 0) {
+                fos.write(buffer, 0, length);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return file.getAbsolutePath();
+    }
+
     // Метод для начала записи голоса
     public void startRecording() {
         // Проверка разрешения на запись аудио
@@ -120,7 +180,7 @@ public class MainActivity extends AppCompatActivity {
             ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECORD_AUDIO}, REQUEST_RECORD_AUDIO_PERMISSION);
         } else {
 
-            audioData = new ByteArrayOutputStream();
+            audioData.reset();
             bufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_IN, BIT_PER_SAMPLE);
             audioRecord = new AudioRecord(MediaRecorder.AudioSource.MIC, SAMPLE_RATE, CHANNEL_IN, BIT_PER_SAMPLE, bufferSize);
 
@@ -160,7 +220,8 @@ public class MainActivity extends AppCompatActivity {
 
     // Метод для воспроизведения записанного звука
     public void playRecording(View view) {
-        if (audioData != null) {
+        if (audioData.size() != 0) {
+            makeDecision();
             textViewResults.setText("Playing...");
             byte[] audioBytes = audioData.toByteArray();
             int minBufferSize = AudioTrack.getMinBufferSize(SAMPLE_RATE, CHANNEL_OUT, BIT_PER_SAMPLE);
@@ -168,13 +229,16 @@ public class MainActivity extends AppCompatActivity {
             audioTrack.play();
             audioTrack.write(audioBytes, 0, audioBytes.length);
             textViewResults.setText("Audio ended...");
+
+        }
+        else {
+            int duration = Toast.LENGTH_SHORT;
+            toast = Toast.makeText(this /* MyActivity */, "audio buffer is empty", duration);
+            toast.show();
         }
     }
 
     public void writeInWav() {
-        String path = sdDir + "/Documents/TempSRA/";
-        directory = new File(path);
-
         if (!directory.exists()) {
             boolean isDirectoryCreated = directory.mkdirs();
             if (isDirectoryCreated) {
