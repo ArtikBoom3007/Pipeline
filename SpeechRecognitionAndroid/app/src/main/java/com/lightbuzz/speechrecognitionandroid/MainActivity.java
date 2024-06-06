@@ -9,6 +9,7 @@ import android.media.AudioManager;
 import android.media.AudioRecord;
 import android.media.AudioTrack;
 import android.media.MediaRecorder;
+import android.media.audiofx.NoiseSuppressor;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
@@ -25,11 +26,15 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.Objects;
 
 import com.chaquo.python.Python;
 import com.chaquo.python.PyObject;
 import com.chaquo.python.android.AndroidPlatform;
+
+import be.tarsos.dsp.SilenceDetector;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -47,6 +52,8 @@ public class MainActivity extends AppCompatActivity {
     private static final int CHANNEL_OUT = AudioFormat.CHANNEL_OUT_MONO;
     private static final int BIT_PER_SAMPLE = AudioFormat.ENCODING_PCM_16BIT;
     private static final int AUDIO_LENGTH = 5 * SAMPLE_RATE * BIT_PER_SAMPLE;
+    private static final int frameSize = 25 * SAMPLE_RATE / 1000; //25ms * 44,1 kHz
+    private SilenceDetector silenceDetector;
     private int bufferSize;
     private int nameIterator;
     private File directory;
@@ -82,6 +89,7 @@ public class MainActivity extends AppCompatActivity {
         initPy();
 
         audioData = new ByteArrayOutputStream();
+
         enable.setOnClickListener(new View.OnClickListener()
         {
             @Override
@@ -119,6 +127,7 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+
     public void initPy() {
 
         if (! Python.isStarted()) {
@@ -130,7 +139,8 @@ public class MainActivity extends AppCompatActivity {
         module = py.getModule("classifier");
 
         String modelPath = copyAssetToCache(this, "svm_classifier_model.pkl");
-        module.callAttr("load_model", modelPath);
+        String modelCPath = copyAssetToCache(this, "svm_classifier_model_only_mfcc.pkl");
+        module.callAttr("load_model", modelPath, modelCPath);
     }
 
     public void makeDecision() {
@@ -183,6 +193,12 @@ public class MainActivity extends AppCompatActivity {
             audioData.reset();
             bufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_IN, BIT_PER_SAMPLE);
             audioRecord = new AudioRecord(MediaRecorder.AudioSource.MIC, SAMPLE_RATE, CHANNEL_IN, BIT_PER_SAMPLE, bufferSize);
+            NoiseSuppressor suppressor = NoiseSuppressor.create(audioRecord.getAudioSessionId());
+            Log.d("NS status", NoiseSuppressor.isAvailable() ? "NS available" : "NS not aval");
+
+            // Create a SilenceDetector with a threshold of -50 dB
+            silenceDetector = new SilenceDetector(40, false);
+            // Create an AudioDispatcher to process the audio data
 
             audioRecord.startRecording();
 
@@ -193,7 +209,9 @@ public class MainActivity extends AppCompatActivity {
                     while (isRecording) {
                         byte[] buffer = new byte[bufferSize];
                         int bytesRead = audioRecord.read(buffer, 0, buffer.length);
-                        if (bytesRead > 0) {
+                        boolean isSil = silenceDetector.isSilence(bytesToFloats(buffer));
+
+                        if (bytesRead > 0 && !isSil) {
                             audioData.write(buffer, 0, bytesRead);
                         }
                         if (audioData.size() == AUDIO_LENGTH) {
@@ -218,10 +236,18 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private static float[] bytesToFloats(byte[] bytes) {
+        float[] floats = new float[bytes.length / 2];
+        for(int i=0; i < bytes.length; i+=2) {
+            floats[i/2] = bytes[i] | (bytes[i+1] << 8);
+        }
+        return floats;
+    }
+
     // Метод для воспроизведения записанного звука
     public void playRecording(View view) {
         if (audioData.size() != 0) {
-            makeDecision();
+
             textViewResults.setText("Playing...");
             byte[] audioBytes = audioData.toByteArray();
             int minBufferSize = AudioTrack.getMinBufferSize(SAMPLE_RATE, CHANNEL_OUT, BIT_PER_SAMPLE);
@@ -236,6 +262,38 @@ public class MainActivity extends AppCompatActivity {
             toast = Toast.makeText(this /* MyActivity */, "audio buffer is empty", duration);
             toast.show();
         }
+        makeDecision();
+    }
+
+    private static int findMaxAmplitude(short[] buffer) {
+        short max = Short.MIN_VALUE;
+        for (int i = 0; i < buffer.length; ++i) {
+            short value = buffer[i];
+            max = (short)Math.max(max, Math.abs(value));
+        }
+        return max;
+    }
+
+    byte[] normalize_audio(byte[] audio) {
+        short[] buffer = new short[audio.length/2];
+        ByteBuffer.wrap(audio).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer().get(buffer);
+        short[] output = new short[buffer.length];
+        int maxAmplitude = findMaxAmplitude(buffer);
+        for (int index = 0; index < buffer.length; index++) {
+            output[index] = normalize_sample(buffer[index], maxAmplitude);
+        }
+        byte[] res = new byte[output.length * 2];
+        ByteBuffer.wrap(res).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer().put(output);
+        return res;
+    }
+
+    private short normalize_sample(short value, int rawMax) {
+        short targetMax = 32767;
+        double maxReduce = 1 - targetMax / (double) rawMax;
+        int abs = Math.abs(value);
+        double factor = (maxReduce * abs / (double) rawMax);
+
+        return (short)Math.round(value * targetMax / rawMax);
     }
 
     public void writeInWav() {
@@ -259,7 +317,10 @@ public class MainActivity extends AppCompatActivity {
             os = new FileOutputStream(temp_audio);
             writeWavHeader(os, 1, audioData.size());
 
-            os.write(audioData.toByteArray(), 0, audioData.size());
+            byte[] norm_audio = normalize_audio(audioData.toByteArray());
+
+
+            os.write(norm_audio, 0, norm_audio.length);
             os.close();
         } catch (IOException e) {
             e.printStackTrace();
