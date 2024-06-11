@@ -52,6 +52,8 @@ def extract_features(file_path):
         energy, 
         zcr
     ])
+
+    features = scaler.transform(features.reshape(1, -1))
     
     if features.any():
         print("features extract saccessfully")
@@ -62,7 +64,7 @@ def classify_audio(file_path):
     
     features = extract_features(file_path)
     
-    prediction = model_py.predict([features])
+    prediction = model_py.predict(features)
         
     print("prediction", prediction)
 
@@ -75,10 +77,11 @@ def predict_from_features(feat):
     return int(prediction[0])
     
 
-def load_model(model_path, model_c_path):
-    global model_py, model_c
+def load_model(model_path, model_c_path, scaler_path):
+    global model_py, model_c, scaler
     model_py = load(model_path)
     model_c = load(model_c_path)
+    scaler = load(scaler_path)
     print("Model loaded successfully!")
 
 # def return_signal(file_path):

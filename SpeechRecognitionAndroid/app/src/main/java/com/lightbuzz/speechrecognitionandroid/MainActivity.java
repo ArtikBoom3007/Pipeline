@@ -14,9 +14,14 @@ import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.text.Editable;
+import android.text.TextWatcher;
+import android.text.method.ScrollingMovementMethod;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
+import android.widget.ScrollView;
+import android.widget.SeekBar;
 import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -38,12 +43,16 @@ import be.tarsos.dsp.SilenceDetector;
 
 public class MainActivity extends AppCompatActivity {
 
-
+    private String toRead = "Once upon a time there was a sweet little girl. Everyone who saw her liked her, but most of all her grandmother, who did not know what to give the child next. Once she gave her a little cap made of red velvet. Because it suited her so well, and she wanted to wear it all the time, she came to be known as Little Red Riding Hood. One day her mother said to her: \"Come Little Red Riding Hood. Here is a piece of cake and a bottle of wine. Take them to your grandmother. She is sick and weak, and they will do her well. Mind your manners and give her my greetings. Behave yourself on the way, and do not leave the path, or you might fall down and break the glass, and then there will be nothing for your sick grandmother.";
     private TextView textViewResults;
+    private TextView detectionStatus;
+    private SeekBar seekBar;
+    private TextView trCurrentValue;
     File sdDir = null;
     private ByteArrayOutputStream audioData;
     private AudioRecord audioRecord;
     private Thread recordingThread;
+    private Thread modelThread;
     private boolean isRecording = false;
     private static final int REQUEST_RECORD_AUDIO_PERMISSION = 200;
     private static final int SAMPLE_RATE = 44100;
@@ -53,6 +62,10 @@ public class MainActivity extends AppCompatActivity {
     private static final int BIT_PER_SAMPLE = AudioFormat.ENCODING_PCM_16BIT;
     private static final int AUDIO_LENGTH = 5 * SAMPLE_RATE * BIT_PER_SAMPLE;
     private static final int frameSize = 25 * SAMPLE_RATE / 1000; //25ms * 44,1 kHz
+    private int threshold;
+    private static final int MIN_VALUE = -100;
+    private static final int MAX_VALUE = 100;
+
     private SilenceDetector silenceDetector;
     private int bufferSize;
     private int nameIterator;
@@ -69,6 +82,12 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
 
         textViewResults = (TextView)findViewById(R.id.textViewResults);
+        detectionStatus = (TextView)findViewById(R.id.detectionStatus);
+        seekBar = findViewById(R.id.vadSeekBar);
+        trCurrentValue = findViewById(R.id.vadParam);
+        TextView tv = (TextView)findViewById(R.id.taleText);
+        tv.setText(toRead);
+        tv.setMovementMethod(new ScrollingMovementMethod());
         Switch enable = (Switch)findViewById(R.id.switch_delete);
         enable.setChecked(true);
 
@@ -87,6 +106,8 @@ public class MainActivity extends AppCompatActivity {
         directory = new File(path);
 
         initPy();
+
+        initSeek();
 
         audioData = new ByteArrayOutputStream();
 
@@ -118,6 +139,7 @@ public class MainActivity extends AppCompatActivity {
         Button startRecordingButton = findViewById(R.id.startRecordingButton);
         if (!isRecording) {
             isRecording = true;
+            textViewResults.setText("Listening...");
             startRecording();
             startRecordingButton.setText("Stop recording");
         } else {
@@ -126,7 +148,6 @@ public class MainActivity extends AppCompatActivity {
             startRecordingButton.setText("Start recording");
         }
     }
-
 
     public void initPy() {
 
@@ -140,7 +161,35 @@ public class MainActivity extends AppCompatActivity {
 
         String modelPath = copyAssetToCache(this, "svm_classifier_model.pkl");
         String modelCPath = copyAssetToCache(this, "svm_classifier_model_only_mfcc.pkl");
-        module.callAttr("load_model", modelPath, modelCPath);
+        String scalerPath = copyAssetToCache(this, "scaler.pkl");
+        module.callAttr("load_model", modelPath, modelCPath, scalerPath);
+    }
+
+    private void initSeek() {
+        seekBar.setMax(MAX_VALUE - MIN_VALUE);
+
+        seekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                threshold = progress + MIN_VALUE;
+                trCurrentValue.setText(String.valueOf(threshold));
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {
+                // Do something if needed when user starts to touch the SeekBar
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {
+                // Do something if needed when user stops to touch the SeekBar
+            }
+        });
+
+        // Set the initial threshold value if needed
+        threshold = 40;
+        trCurrentValue.setText(String.valueOf(threshold));
+        seekBar.setProgress(threshold - MIN_VALUE);
     }
 
     public void makeDecision() {
@@ -152,19 +201,20 @@ public class MainActivity extends AppCompatActivity {
             sum += result.toJava(float.class);
         }
 
-        String diagnosis;
         if (sum / audiofiles.length > 0.5) {
-            diagnosis = "Parkinson";
+            detectionStatus.setText("Possibility of Parkinson's disease");
         }
         else {
-            diagnosis = "normal";
+            detectionStatus.setText("Parkinson's disease not detected");
         }
 
-        int duration = Toast.LENGTH_LONG;
-
-        toast = Toast.makeText(this /* MyActivity */, "Your predict " + diagnosis, duration);
-        toast.show();
-
+        // Now post a toast message to the UI thread
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                Toast.makeText(MainActivity.this, "Prediction complete", Toast.LENGTH_SHORT).show();
+            }
+        });
     }
 
     public static String copyAssetToCache(Context context, String assetName) {
@@ -193,11 +243,9 @@ public class MainActivity extends AppCompatActivity {
             audioData.reset();
             bufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_IN, BIT_PER_SAMPLE);
             audioRecord = new AudioRecord(MediaRecorder.AudioSource.MIC, SAMPLE_RATE, CHANNEL_IN, BIT_PER_SAMPLE, bufferSize);
-            NoiseSuppressor suppressor = NoiseSuppressor.create(audioRecord.getAudioSessionId());
-            Log.d("NS status", NoiseSuppressor.isAvailable() ? "NS available" : "NS not aval");
 
             // Create a SilenceDetector with a threshold of -50 dB
-            silenceDetector = new SilenceDetector(40, false);
+            silenceDetector = new SilenceDetector(threshold, false);
             // Create an AudioDispatcher to process the audio data
 
             audioRecord.startRecording();
@@ -233,6 +281,14 @@ public class MainActivity extends AppCompatActivity {
             audioRecord = null;
             recordingThread = null;
             writeInWav();
+
+            modelThread = new Thread(new Runnable() {
+                @Override
+                public void run() {
+                   makeDecision();
+                }
+            });
+            modelThread.start();
         }
     }
 
@@ -255,14 +311,12 @@ public class MainActivity extends AppCompatActivity {
             audioTrack.play();
             audioTrack.write(audioBytes, 0, audioBytes.length);
             textViewResults.setText("Audio ended...");
-
         }
         else {
             int duration = Toast.LENGTH_SHORT;
             toast = Toast.makeText(this /* MyActivity */, "audio buffer is empty", duration);
             toast.show();
         }
-        makeDecision();
     }
 
     private static int findMaxAmplitude(short[] buffer) {
