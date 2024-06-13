@@ -9,6 +9,7 @@ import android.media.AudioManager;
 import android.media.AudioRecord;
 import android.media.AudioTrack;
 import android.media.MediaRecorder;
+import android.media.audiofx.NoiseSuppressor;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
@@ -40,13 +41,9 @@ import com.chaquo.python.android.AndroidPlatform;
 
 import be.tarsos.dsp.SilenceDetector;
 
-import com.chaquo.python.Python;
-import com.chaquo.python.PyObject;
-import com.chaquo.python.android.AndroidPlatform;
-
 public class MainActivity extends AppCompatActivity {
 
-    private String toRead = "Once upon a time there was a sweet little girl. Everyone who saw her liked her, but most of all her grandmother, who did not know what to give the child next. Once she gave her a little cap made of red velvet. Because it suited her so well, and she wanted to wear it all the time, she came to be known as Little Red Riding Hood. One day her mother said to her: \"Come Little Red Riding Hood. Here is a piece of cake and a bottle of wine. Take them to your grandmother. She is sick and weak, and they will do her well. Mind your manners and give her my greetings. Behave yourself on the way, and do not leave the path, or you might fall down and break the glass, and then there will be nothing for your sick grandmother.";
+    private String toRead;
     private TextView textViewResults;
     private TextView detectionStatus;
     private SeekBar seekBar;
@@ -79,12 +76,6 @@ public class MainActivity extends AppCompatActivity {
 
     private boolean deleteFlag = false;
 
-    static {
-       System.loadLibrary("speechrecognitionandroid");
-    }
-
-    private native String stringFromJNI();
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -95,38 +86,13 @@ public class MainActivity extends AppCompatActivity {
         seekBar = findViewById(R.id.vadSeekBar);
         trCurrentValue = findViewById(R.id.vadParam);
         TextView tv = (TextView)findViewById(R.id.taleText);
+        toRead = loadTale("ReadText.txt");
         tv.setText(toRead);
         tv.setMovementMethod(new ScrollingMovementMethod());
         Switch enable = (Switch)findViewById(R.id.switch_delete);
         enable.setChecked(true);
 
         nameIterator = 0;
-
-        Button hello_c = findViewById(R.id.button_c);
-        Button hello_py = findViewById(R.id.button_py);
-        TextView textHello = (TextView)findViewById(R.id.textHello);
-
-        hello_c.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                textHello.setText(stringFromJNI());
-            }
-        });
-
-        if (! Python.isStarted()) {
-            Python.start(new AndroidPlatform(this));
-        }
-
-        hello_py.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                Python py = Python.getInstance();
-                PyObject pyObject = py.getModule("myscript");
-                String result = pyObject.callAttr("test").toString();
-                TextView myAwesomeTextView = (TextView)findViewById(R.id.textHello);
-                myAwesomeTextView.setText(result);
-            }
-        });
 
         // Проверка и запрос разрешения на запись аудио
         ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECORD_AUDIO},
@@ -266,6 +232,22 @@ public class MainActivity extends AppCompatActivity {
             e.printStackTrace();
         }
         return file.getAbsolutePath();
+    }
+
+    String loadTale(String path)  {
+        String text = "";
+        try {
+            InputStream is = getAssets().open(path);
+            int size = is.available();
+            byte[] buffer = new byte[size];
+            is.read(buffer);
+            is.close();
+            text = new String(buffer);
+        }
+        catch (IOException e) {
+            e.printStackTrace();
+        }
+        return text;
     }
 
     // Метод для начала записи голоса
