@@ -8,6 +8,10 @@ buildscript {
             url "https://maven.google.com"
         }
         maven { url "https://chaquo.com/maven" }
+        maven {
+            name = "TarsosDSP repository"
+            url = "https://mvn.0110.be/releases"
+        }
     }
     dependencies {
         classpath 'com.android.tools.build:gradle:8.3.2'
@@ -30,6 +34,10 @@ allprojects {
             url "https://maven.google.com"
         }
         maven { url "https://chaquo.com/maven" }
+        maven {
+            name = "TarsosDSP repository"
+            url = "https://mvn.0110.be/releases"
+        }
     }
 }
 
